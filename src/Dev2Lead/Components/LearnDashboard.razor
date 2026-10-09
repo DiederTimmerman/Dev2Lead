@@ -1,0 +1,144 @@
+@using Dev2Lead.Core
+@using Dev2Lead.Services
+@using Microsoft.Extensions.Logging
+@implements IDisposable
+@inject LearnTranscriptService Learn
+@inject DesktopServices Desktop
+@inject CloudProfileClient Cloud
+@inject GoogleSignInService Google
+@inject ILogger<LearnDashboard> Logger
+
+<section class="panel learn-connect">
+    <div><span class="tag purple">MICROSOFT LEARN</span><h2>Your experience, backed by achievements.</h2><p>Your transcript link is saved in your signed-in account's database record. Achievement sync is read-only; no Microsoft sign-in is needed.</p></div>
+    <div class="learn-source"><label for="transcript-url">Public transcript sharing URL</label><div><input id="transcript-url" @bind="sourceUrl" placeholder="https://learn.microsoft.com/en-us/users/you/transcript/share-id" disabled="@(loading || !Google.IsSignedIn)" /><button class="btn primary" @onclick="Refresh" disabled="@(loading || !Google.IsSignedIn)">@(loading ? "Syncing..." : "Save & sync transcript")</button></div></div>
+</section>
+@if (error.Length > 0)
+{
+    <div class="notice" role="alert" style="margin-top:16px">@error @(data is not null && refreshFailed ? "Showing the previous successful sync below; it is not current." : "")</div>
+}
+@if (loading) { <div class="thinking" role="status" style="margin-top:18px">Collecting your milestones from Microsoft Learn...</div> }
+@if (data is { } transcript)
+{
+    <div class="learn-meta"><span>@@@transcript.UserName <span class="tag green">PUBLIC TRANSCRIPT</span></span><span>Synced @transcript.RetrievedOn.ToString("dd MMM yyyy, HH:mm") <a href="@transcript.SourceUrl" @onclick="() => Open(transcript.SourceUrl)" @onclick:preventDefault>View original <Icon Name="external" /></a></span></div>
+    <div class="stat-grid">
+        <div class="stat-card"><div class="stat-icon green"><Icon Name="award" /></div><div><small>ACTIVE CERTIFICATIONS</small><strong>@transcript.ActiveCertifications.Count</strong><p>@transcript.HistoricalCertifications.Count historical credentials</p></div></div>
+        <div class="stat-card"><div class="stat-icon blue"><Icon Name="book" /></div><div><small>COMPLETED MODULES</small><strong>@transcript.Modules.Count</strong><p>@transcript.LearningPathsCompleted learning paths completed</p></div></div>
+        <div class="stat-card"><div class="stat-icon"><Icon Name="target" /></div><div><small>EARNED BADGES &amp; AWARDS</small><strong>@transcript.Awards.Count</strong><p>@(transcript.TrainingMinutes / 60) hr @(transcript.TrainingMinutes % 60) min of completed training</p></div></div>
+    </div>
+    <div class="learn-toolbar">
+        <nav aria-label="Achievement categories">
+            <button class="btn @(section == "certifications" ? "primary" : "subtle")" @onclick='() => SelectSection("certifications")'>Certifications (@(transcript.ActiveCertifications.Count + transcript.HistoricalCertifications.Count))</button>
+            <button class="btn @(section == "modules" ? "primary" : "subtle")" @onclick='() => SelectSection("modules")'>Completed modules (@transcript.Modules.Count)</button>
+            <button class="btn @(section == "badges" ? "primary" : "subtle")" @onclick='() => SelectSection("badges")'>Badges &amp; trophies (@transcript.Awards.Count)</button>
+        </nav>
+        <input aria-label="Search achievements" placeholder="Search your achievements..." @bind="query" @bind:event="oninput" />
+    </div>
+    @if (section == "certifications")
+    {
+        <div class="learn-section-heading"><h2>Active certifications</h2><span class="tag green">CURRENT CREDENTIALS</span></div>
+        <div class="certification-grid">
+            @foreach (var certification in transcript.ActiveCertifications.Where(c => Matches(c.Title)))
+            {
+                <article class="panel certification-card"><div class="credential-symbol"><Icon Name="award" /></div><span class="tag green">@certification.Status</span><h3>@certification.Title</h3><div class="credential-dates"><span>Earned @certification.EarnedOn.ToString("dd MMM yyyy")</span><span>@(certification.ExpiresOn is { } expiry ? $"Expires {expiry:dd MMM yyyy}" : "No expiry listed")</span></div><a class="resource-link" href="@transcript.SourceUrl" @onclick="() => Open(transcript.SourceUrl)" @onclick:preventDefault>View in transcript <Icon Name="external" /></a></article>
+            }
+        </div>
+        <div class="learn-section-heading"><h2>Historical certifications</h2><span class="tag amber">PAST CREDENTIALS</span></div>
+        <div class="certification-grid">
+            @foreach (var certification in transcript.HistoricalCertifications.Where(c => Matches(c.Title)))
+            {
+                <article class="panel certification-card historical"><div class="credential-symbol"><Icon Name="award" /></div><span class="tag amber">@certification.Status</span><h3>@certification.Title</h3><div class="credential-dates"><span>Earned @certification.EarnedOn.ToString("dd MMM yyyy")</span><span>@(certification.ExpiresOn is { } expiry ? $"Expired {expiry:dd MMM yyyy}" : "No expiry listed")</span></div></article>
+            }
+        </div>
+        @if (!transcript.ActiveCertifications.Concat(transcript.HistoricalCertifications).Any(c => Matches(c.Title))) { <p class="empty-state">No certifications match your search.</p> }
+    }
+    else if (section == "modules")
+    {
+        <div class="panel module-list">
+            @foreach (var module in transcript.Modules.Where(m => Matches(m.Title)).Take(visible))
+            {
+                <article class="module-row"><div class="module-check"><Icon Name="check" /></div><div><h3>@module.Title</h3><p>Completed @module.CompletedOn.ToString("dd MMM yyyy") <span>/</span> @module.DurationMinutes min @(module.Url is null ? "/ Resource link unavailable" : "")</p></div><a class="resource-link" href="@(module.Url ?? transcript.SourceUrl)" @onclick="() => Open(module.Url ?? transcript.SourceUrl)" @onclick:preventDefault>@(module.Url is null ? "View transcript" : "Revisit") <Icon Name="external" /></a></article>
+            }
+            @if (!transcript.Modules.Any(m => Matches(m.Title))) { <p class="empty-state">No completed modules match your search.</p> }
+        </div>
+        @if (transcript.Modules.Count(m => Matches(m.Title)) > visible) { <button class="btn learn-more" @onclick="() => visible += 24">Show more completed modules</button> }
+    }
+    else
+    {
+        <p class="section-caption">Actual Microsoft Learn achievement artwork. Includes module badges, learning-path trophies, and course awards—not additional certifications.</p>
+        <div class="badge-grid">
+            @foreach (var badge in transcript.Awards.Where(b => Matches(b.Title)).Take(visible))
+            {
+                <article class="panel badge-card"><img src="@badge.ImageUrl" alt="" loading="lazy" /><span class="tag purple">@AwardLabel(badge.Category)</span><h3>@badge.Title</h3><p>Earned @badge.EarnedOn.ToString("dd MMM yyyy") @(badge.Url is null ? "| Resource link unavailable" : "")</p><a class="resource-link" href="@(badge.Url ?? transcript.SourceUrl)" @onclick="() => Open(badge.Url ?? transcript.SourceUrl)" @onclick:preventDefault>@(badge.Url is null ? "View transcript" : "View learning achievement") <Icon Name="external" /></a></article>
+            }
+        </div>
+        @if (!transcript.Awards.Any(b => Matches(b.Title))) { <p class="empty-state">No badges match your search.</p> }
+        @if (transcript.Awards.Count(b => Matches(b.Title)) > visible) { <button class="btn learn-more" @onclick="() => visible += 24">Show more badges</button> }
+    }
+    <p class="section-caption">Fetched from Microsoft's public Learn profile services. These website endpoints can change. Contact details and certification numbers are not displayed or retained, and this data is not sent to the AI coach.</p>
+}
+else if (!loading && error.Length == 0)
+{
+    <div class="panel empty-state"><span class="brand-star">&#10022;</span><h3>Your hard work deserves a spotlight.</h3><p>Paste your public Microsoft Learn transcript link above to bring your certifications and achievements into Dev2Lead.</p></div>
+}
+
+@code {
+    private string sourceUrl = "", section = "certifications", query = "", error = "";
+    private bool loading, disposed, refreshFailed;
+    private int visible = 24;
+    private LearnTranscript? data;
+    private readonly CancellationTokenSource lifetime = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!Google.IsSignedIn) { error = "Sign in with Google to load and save your transcript link."; return; }
+        try
+        {
+            sourceUrl = (await Cloud.LoadSettingsAsync(lifetime.Token)).TranscriptUrl;
+            if (sourceUrl.Length > 0) await Refresh(save: false);
+        }
+        catch (Exception ex) when (ClientErrors.IsExpected(ex))
+        { Logger.LogError(ex, "Could not load account transcript preferences"); error = ex.Message; }
+    }
+    private bool Matches(string title) => title.Contains(query.Trim(), StringComparison.OrdinalIgnoreCase);
+    private static string AwardLabel(string category) => category switch
+    {
+        "modules" => "MODULE BADGE", "learningpaths" => "PATH TROPHY", "courses" => "COURSE AWARD", _ => "LEARN AWARD"
+    };
+    private void SelectSection(string value) { section = value; visible = 24; query = ""; }
+    private Task Refresh() => Refresh(save: true);
+    private async Task Refresh(bool save)
+    {
+        if (loading) return;
+        loading = true; error = "";
+        try
+        {
+            if (save)
+            {
+                var preferences = Cloud.Settings ?? throw new InvalidOperationException("Refresh your account before saving the transcript.");
+                await Cloud.SaveSettingsAsync(sourceUrl, preferences.Consents, lifetime.Token);
+            }
+            var result = await Learn.LoadAsync(sourceUrl, lifetime.Token);
+            if (disposed) return;
+            data = result;
+            refreshFailed = false;
+            visible = 24;
+        }
+        catch (OperationCanceledException) when (disposed) { }
+        catch (Exception ex) when (ClientErrors.IsExpected(ex) || ex is FormatException)
+        {
+            Logger.LogError(ex, "Microsoft Learn sync failed");
+            refreshFailed = true;
+            error = ex is System.Text.Json.JsonException or KeyNotFoundException or FormatException
+                ? "Microsoft Learn returned an unexpected response. Try again or check the original transcript."
+                : ex is OperationCanceledException ? "Microsoft Learn took too long to respond. Please retry." : ex.Message;
+        }
+        finally { loading = false; }
+    }
+    private async Task Open(string url)
+    {
+        try { await Desktop.OpenLearnUrlAsync(url); }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException or NotSupportedException)
+        { Logger.LogError(ex, "Could not open Microsoft Learn link"); error = ex.Message; }
+    }
+    public void Dispose() { disposed = true; lifetime.Cancel(); lifetime.Dispose(); }
+}

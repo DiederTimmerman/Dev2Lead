@@ -1,0 +1,42 @@
+@using Dev2Lead.Services
+@using Microsoft.Extensions.Logging
+@inject ILogger<BrandVisual> Logger
+
+<section class="bbtg-visual @(paused ? "is-paused" : "")" aria-label="Animated designer brand visual">
+    <div class="bbtg-stage" aria-hidden="true">
+        <div class="bbtg-halo"></div>
+        <div class="bbtg-floor"></div>
+        <div class="bbtg-network">
+            <div class="network-ring ring-one"></div><div class="network-ring ring-two"></div>
+            <div class="network-edge edge-one"></div><div class="network-edge edge-two"></div><div class="network-edge edge-three"></div>
+            <div class="network-node node-one"><div class="node-face"></div><div class="node-side"></div><div class="node-top"></div></div>
+            <div class="network-node node-two"><div class="node-face"></div><div class="node-side"></div><div class="node-top"></div></div>
+            <div class="network-node node-three"><div class="node-face"></div><div class="node-side"></div><div class="node-top"></div></div>
+            <div class="network-spark spark-one"></div><div class="network-spark spark-two"></div>
+        </div>
+    </div>
+    <div class="bbtg-logo-card">
+        <span class="bbtg-card-label">GROWTH BY DESIGN</span>
+        @if (!logoFailed)
+        {
+            <img src="images/designer.png" alt="Your blue and green designer logo" width="118" height="118" @onerror="LogoUnavailable" />
+        }
+        else
+        {
+            <strong class="bbtg-logo-unavailable">Dev2Lead</strong>
+            <span class="bbtg-asset-error" role="status">Designer image unavailable</span>
+        }
+        <span class="bbtg-card-caption">Your next chapter. By design.</span>
+    </div>
+    <div class="bbtg-visual-caption"><span class="bbtg-live-dot" aria-hidden="true"></span> CONNECTED BY AMBITION</div>
+    <button class="bbtg-motion-toggle" @onclick="() => paused = !paused" aria-pressed="@paused" aria-label="@(paused ? "Play brand animation" : "Pause brand animation")">@(paused ? "Play motion" : "Pause motion")</button>
+</section>
+
+@code {
+    private bool paused, logoFailed;
+    private void LogoUnavailable()
+    {
+        logoFailed = true;
+        Logger.LogWarning("The packaged designer logo could not be loaded");
+    }
+}

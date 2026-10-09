@@ -1,0 +1,555 @@
+@page "/"
+@using Dev2Lead.Core
+@using Dev2Lead.Services
+@using Microsoft.Extensions.Logging
+@inject GoogleSignInService Google
+@inject CloudProfileClient Cloud
+@inject DesktopServices Desktop
+@inject ILogger<Home> Logger
+
+<div class="app-shell">
+    <aside class="sidebar">
+        <div class="brand"><span class="brand-star">&#10022;</span><span class="brand-text">Dev2Lead<em>.</em></span></div>
+        <nav class="nav-group" aria-label="Main navigation">
+            <div class="eyebrow">YOUR WORKSPACE</div>
+            <button class="nav-item @(tab == "overview" ? "active" : "")" @onclick='() => tab = "overview"' disabled="@busy"><Icon Name="grid" /><span class="nav-text">Overview</span></button>
+            <button class="nav-item @(tab == "roadmap" ? "active" : "")" @onclick='() => tab = "roadmap"' disabled="@busy"><Icon Name="route" /><span class="nav-text">My roadmap</span><span class="nav-count">5</span></button>
+            <button class="nav-item @(tab == "skills" ? "active" : "")" @onclick='() => tab = "skills"' disabled="@busy"><Icon Name="target" /><span class="nav-text">My skills</span></button>
+            <button class="nav-item @(tab == "gap" ? "active" : "")" @onclick='() => tab = "gap"' disabled="@busy"><Icon Name="target" /><span class="nav-text">Career Gap Analysis</span></button>
+            <button class="nav-item @(tab == "experience" ? "active" : "")" @onclick='() => tab = "experience"' disabled="@busy"><Icon Name="route" /><span class="nav-text">My experience</span></button>
+            <button class="nav-item @(tab == "library" ? "active" : "")" @onclick='() => tab = "library"' disabled="@busy"><Icon Name="book" /><span class="nav-text">Learning library</span></button>
+            <button class="nav-item @(tab == "learn" ? "active" : "")" @onclick='() => tab = "learn"' disabled="@busy"><Icon Name="award" /><span class="nav-text">Microsoft Learn</span></button>
+            <div class="eyebrow">GROW WITH YOUR COACHES</div>
+            @foreach (var coach in GrowthCoaches.All)
+            {
+                <button class="nav-item @(tab == coach.Id ? "active" : "")" @onclick="() => tab = coach.Id" disabled="@busy"><Icon Name="chat" /><span class="nav-text">@coach.Name</span></button>
+            }
+        </nav>
+        <div class="side-note"><span class="star">&#10022;</span><h3>Your potential. Unlocked.</h3><p>You don't need to see the whole staircase. Just the next right step.</p></div>
+    </aside>
+
+    <main class="workspace">
+        <header class="topbar">
+            <div class="breadcrumb">Workspace <span>/ @(IsGrowthTab ? GrowthTitle : tab == "skills" ? "My skills" : tab == "experience" ? "My experience" : tab == "learn" ? "Microsoft Learn" : tab == "library" ? "Learning library" : tab == "roadmap" ? "My roadmap" : "Overview")</span></div>
+            <div class="top-actions">
+                <button class="btn small subtle" @onclick="OpenSettings" disabled="@busy"><Icon Name="settings" /> Permissions</button>
+                @if (Google.IsSignedIn)
+                {
+                    <div class="account-menu">
+                        <button class="btn small account-toggle" aria-haspopup="menu" aria-expanded="@accountMenuOpen" @onclick="() => accountMenuOpen = !accountMenuOpen" disabled="@busy"><span class="avatar">@(Google.Account!.Name is { Length: > 0 } accountName ? accountName[..1].ToUpperInvariant() : "G")</span>@Google.Account.Name <span aria-hidden="true">&#9662;</span></button>
+                        @if (accountMenuOpen)
+                        {
+                            <div class="account-popover" role="menu"><strong>@Google.Account.Name</strong><p>@Google.Account.Email</p><button role="menuitem" @onclick="RefreshProfile" disabled="@busy">Refresh profile</button><button role="menuitem" @onclick="SignOut" disabled="@busy">Sign out</button></div>
+                        }
+                    </div>
+                }
+                else { <button class="btn small google-sign-in" @onclick="SignIn" disabled="@busy"><img src="images/google-g.png" alt="" width="18" height="18" />Sign in with Google</button> }
+            </div>
+        </header>
+        @if (!string.IsNullOrEmpty(notice))
+        {
+            <div class="notice @(noticeIsError ? "" : "success")" role="@(noticeIsError ? "alert" : "status")"><span>@notice</span><button aria-label="Dismiss notification" @onclick='() => notice = ""'>&times;</button></div>
+        }
+        <div class="heading-row">
+            @if (IsGrowthTab)
+            {
+                <div><div class="welcome-marker">Build the person behind the next role.</div><h1>@GrowthTitle</h1><p>Evidence-led insight. Deliberate practice. Your next step forward.</p></div>
+            }
+            else
+            {
+            <div><div class="welcome-marker">A little ambition goes a long way.</div><h1>@(tab == "skills" ? "Know your strengths. Own your growth." : tab == "experience" ? "Your experience. Your foundation." : tab == "learn" ? "You've already come a long way." : tab == "library" ? "Invest in your future." : tab == "roadmap" ? "Your next chapter, mapped." : "Big ambitions. Clear direction.")</h1><p>@(tab == "skills" ? "Technical depth, human strengths, and the standards that connect them." : tab == "experience" ? "The work that brought you here, grounded in your CV." : tab == "learn" ? "Your Microsoft certifications, completed modules, and earned badges. All in one place." : tab == "library" ? "Trusted learning resources. One step closer to who you want to be." : "A career plan that starts with you, not a template.")</p></div>
+            }
+            <div class="date-chip">@DateTime.Today.ToString("dddd, dd MMM")</div>
+        </div>
+
+        @if (IsGrowthTab)
+        {
+            <GrowthDashboard @key="Google.Account?.Subject" Mode="@tab" State="growthState" BusyChanged="SetSkillsBusy" SkillsRequested='() => tab = "skills"' />
+        }
+        else if (tab == "skills")
+        {
+            <SkillsDashboard @key="Google.Account?.Subject" Skills="skills" Cv="@cv" UploadRequested="GoToCv" BusyChanged="SetSkillsBusy" ProfileChanged="ApplyProfile" />
+        }
+        else if (tab == "experience")
+        {
+            <section class="panel skills-intro"><div><span class="tag purple">YOUR CAREER STORY</span><h2>Experience, connected.</h2><p>Work roles extracted from your saved CV, with source evidence. Dates remain unknown when the CV does not state them.</p></div></section>
+            <section class="panel linkedin-panel">
+                <div><span class="tag blue">LINKEDIN IDENTITY</span><h2>@(Cloud.Settings?.LinkedIn?.Name ?? "Connect your professional identity.")</h2><p>Imports your authorized name, email and picture, not employment history. Status: @(Cloud.Settings?.LinkedInStatus ?? "Sign in first").</p>
+                    @if (Cloud.Settings?.LinkedIn is { } linked)
+                    {
+                        <p>@linked.Email / Imported @linked.ImportedOn.ToString("dd MMM yyyy, HH:mm")</p>
+                        @if (linked.PictureUrl is not null) { <img class="linkedin-photo" src="@linked.PictureUrl" alt="Your imported LinkedIn profile" referrerpolicy="no-referrer" /> }
+                    }
+                </div>
+                <div class="hero-buttons"><button class="btn" @onclick="ImportLinkedIn" disabled="@(busy || !Google.IsSignedIn)">Import LinkedIn profile</button>@if (Cloud.Settings?.LinkedIn is not null) { <button class="btn subtle" @onclick="RemoveLinkedIn" disabled="@busy">Remove imported profile</button> }</div>
+            </section>
+            <div class="skills-grid" style="margin-top:20px">
+                @foreach (var experience in experiences)
+                {
+                    <article class="panel skill-card"><span class="tag @(experience.IsCurrent ? "green" : "purple")">@(experience.IsCurrent ? "CURRENT ROLE" : "EXPERIENCE")</span><h3 style="margin-top:16px">@experience.Role</h3><p>@experience.Organization</p><strong>@(experience.StartDate ?? "Unknown start") / @(experience.IsCurrent ? "Present" : experience.EndDate ?? "Unknown end")</strong><p style="margin-top:16px">@experience.Summary</p><details class="skill-evidence"><summary>CV evidence</summary><p>@experience.Evidence</p></details></article>
+                }
+            </div>
+            @if (experiences.Count == 0) { <div class="panel empty-state"><h3>Your story starts with your CV.</h3><p>Upload and analyze your CV to see evidenced work experience here.</p><button class="btn primary" @onclick='() => tab = "overview"'>Go to CV upload</button></div> }
+        }
+        else if (tab == "learn")
+        {
+            <LearnDashboard @key="Google.Account?.Subject" />
+        }
+        else if (tab == "library")
+        {
+            <p class="section-caption">Curated official and educational resources. Links open in your browser. Availability, prerequisites, and pricing are set by each provider.</p>
+            <div class="library-toolbar">
+                <label>Source<select aria-label="Filter learning source" @bind="librarySource"><option value="">All sources</option>@foreach (var source in LearningCatalog.All.Select(r => r.Provider).Distinct().Order()) { <option value="@source">@source</option> }</select></label>
+                <label>Search<input aria-label="Search learning resources" placeholder="Python, WCAG, leadership..." @bind="libraryQuery" @bind:event="oninput" /></label>
+                <span>@LearningCatalog.Filter(librarySource, libraryQuery).Count() resources</span>
+            </div>
+            @if (librarySource is "" or "Udemy") { <p class="section-caption">Udemy entries link to course search results, not verified course endorsements. Check instructor, syllabus, ratings, pricing, and availability before enrolling.</p> }
+            <div class="library-grid">
+                @foreach (var resource in LearningCatalog.Filter(librarySource, libraryQuery))
+                {
+                    <div class="panel library-card"><span class="tag purple">@resource.Kind</span><h3>@resource.Title</h3><p>@resource.Provider</p><a class="btn small" href="@resource.Url" @onclick="() => OpenResource(resource.Id)" @onclick:preventDefault>Explore resource <Icon Name="external" /></a></div>
+                }
+            </div>
+            @if (!LearningCatalog.Filter(librarySource, libraryQuery).Any()) { <p class="empty-state">No resources match this source and search. Try another filter.</p> }
+        }
+        else
+        {
+            @if (tab == "overview")
+            {
+            <section class="hero">
+                <div class="hero-copy">
+                    <div class="eyebrow"><span>&#10022;</span> YOUR FUTURE IS NOT A STRAIGHT LINE</div>
+                    <h2>From where you are.<br />To <span>who you could be.</span></h2>
+                    <p>Bring your experience. Tell us your ambition. Your AI career coach will help you connect the dots.</p>
+                    <p>Sign in, choose your permissions, then add your CV in the single upload panel below.</p>
+                </div>
+                <BrandVisual />
+            </section>
+            }
+            <div class="stat-grid">
+                <div class="stat-card"><div class="stat-icon green"><Icon Name="target" /></div><div><small>YOUR NORTH STAR</small><strong>@(roadmap?.TargetRole ?? "Your ambition")</strong><p>@(roadmap is null ? "Tell your coach where you want to go" : "Personalized from your conversation")</p></div></div>
+                <div class="stat-card"><div class="stat-icon"><Icon Name="clock" /></div><div><small>ESTIMATED JOURNEY</small><strong>@(roadmap?.EstimatedTime ?? "Let's discover")</strong><p>Guidance, not a guarantee</p></div></div>
+                <div class="stat-card"><div class="stat-icon blue"><Icon Name="route" /></div><div><small>YOUR FOCUS POINTS</small><strong>@(roadmap is null ? "5 clear priorities" : $"{completed.Count} / 5 actions done")</strong><div class="progress-track"><span style="width:@(completed.Count * 20)%"></span></div></div></div>
+            </div>
+            <div class="content-grid">
+                <div>
+                    @if (tab == "overview")
+                    {
+                        <section class="panel plan-story"><span class="tag purple">YOUR NEXT CHAPTER</span><h2>@(roadmap is null ? "A story with you at the center." : $"Your path to {roadmap.TargetRole}.")</h2>
+                            @if (roadmap is { } story)
+                            {
+                                <p>@story.Summary</p><p>Your estimated journey is @story.EstimatedTime.ToLowerInvariant(). This is guidance, not a deadline: your learning time, opportunities and existing strengths shape the pace.</p><p>@story.Assumptions</p>
+                            }
+                            else
+                            {
+                                <p>Your next chapter starts with the work you've already done. Add your CV, then tell your coach what you want to become. Together, you'll explore your strengths, the gaps worth closing, and a realistic pace for learning.</p><p>As your ambition becomes clearer, Dev2Lead connects it to focused actions and trusted studies. Your roadmap brings that story into practical steps you can take, one at a time.</p>
+                            }
+                            <button class="btn primary" @onclick='() => tab = "roadmap"'><Icon Name="route" /> Open my roadmap <Icon Name="arrow" /></button>
+                        </section>
+                        <section class="panel cv-panel"><div class="cv-heading"><h3>Your starting point</h3><span>PRIVATE CLOUD PROFILE</span></div>
+                            <button class="upload-zone" @onclick="UploadCv" disabled="@busy"><Icon Name="@(cv.Length > 0 ? "check" : "upload")" /><div><strong>@(cv.Length > 0 ? cvName : "Add your CV")</strong><small>@(cv.Length > 0 ? $"{cv.Length:N0} characters extracted | Click to replace" : "Choose PDF, DOCX or TXT | Up to 10 MB")</small></div></button>
+                            <p>Manage storage and AI permissions in the header. Your original CV and extracted profile are private to your account. Replacing the CV resets its saved experience and skills.</p>
+                            @if (cv.Length > 0)
+                            {
+                                <p><strong>Analysis: @(Cloud.Profile?.AnalysisStatus ?? "Not loaded")</strong> / @skills.Count skills / @experiences.Count roles</p>
+                                <details class="cv-preview"><summary>Review saved CV text</summary><pre>@cv</pre></details>
+                                @if (skills.Count > 0) { <label class="consent"><input type="checkbox" @bind="replaceAnalysisConfirmed" disabled="@busy" /><span>When analyzing again, replace saved skills and experience and discard unsaved edits.</span></label> }
+                                <button class="btn small" @onclick="AnalyzeCv" disabled="@busy">Analyze again / retry</button>
+                                <label class="consent"><input type="checkbox" @bind="deleteConfirmed" disabled="@busy" /><span>Confirm deleting my cloud CV, experiences, and skills.</span></label>
+                                <button class="reset-link" @onclick="DeleteProfile" disabled="@(busy || !deleteConfirmed)">Delete stored CV and profile</button>
+                                <button class="reset-link" @onclick="ResetConversation" disabled="@busy">Clear conversation only</button>
+                            }
+                        </section>
+                    }
+                    else
+                    {
+                    <section class="panel">
+                        <div class="panel-header"><div><h2>Your priorities, made practical.</h2><p>Small, intentional steps. Meaningful, lasting progress.</p></div><span class="tag purple">@(roadmap is null ? "YOUR PLAN AWAITS" : "PERSONALIZED")</span></div>
+                        @if (roadmap is { } plan)
+                        {
+                            <div class="focus-list">
+                                @foreach (var point in plan.FocusPoints)
+                                {
+                                    var resource = LearningCatalog.Find(point.ResourceId);
+                                    <article class="focus-card @(completed.Contains(point.Rank) ? "completed" : "")">
+                                        <div class="rank">@point.Rank.ToString("00")</div>
+                                        <div><div class="focus-top"><h3>@point.Title</h3><button class="check-btn @(completed.Contains(point.Rank) ? "checked" : "")" aria-label="Mark @point.Title as @(completed.Contains(point.Rank) ? "not done" : "done")" aria-pressed="@completed.Contains(point.Rank)" @onclick="() => ToggleDone(point.Rank)"><Icon Name="check" /></button></div>
+                                            <p>@point.Why</p><div class="action-box">@point.Action</div><a class="resource-link" href="@resource.Url" @onclick="() => OpenResource(point.ResourceId)" @onclick:preventDefault>@resource.Title <Icon Name="external" /></a>
+                                        </div>
+                                    </article>
+                                }
+                            </div>
+                            <div class="assumptions"><strong>The thinking behind your timeline</strong><br />@plan.Assumptions</div>
+                        }
+                        else
+                        {
+                            <div class="empty-state"><span class="brand-star">&#10022;</span><h3>You bring the ambition.<br />We'll help build the path.</h3><p>Upload your CV, share your goal with the coach,<br />then create your personal five-point roadmap.</p></div>
+                        }
+                    </section>
+                    @if (roadmap is { } timelinePlan)
+                    {
+                        <section class="panel timeline-panel"><div class="panel-header"><div><h2>The path to @timelinePlan.TargetRole</h2><p>@timelinePlan.Summary</p></div></div><div class="timeline">
+                            @foreach (var milestone in timelinePlan.Milestones)
+                            {
+                                <div class="milestone"><span class="period">@milestone.Period</span><h3>@milestone.Title</h3><p>@milestone.Outcome</p></div>
+                            }
+                        </div></section>
+                        <div class="section-caption">AI-generated career guidance. Review your plan with a mentor or manager. Course links are curated, not live search results.</div>
+                        <button class="btn" @onclick="ExportRoadmap" disabled="@busy"><Icon Name="download" /> Export my roadmap</button>
+                    }
+                    }
+                </div>
+                <div>
+                    <section class="panel coach-panel">
+                        <div class="coach-header"><div class="coach-avatar">&#10022;</div><div><h2>Meet your career coach</h2><p>A sounding board for your next step.</p></div><span class="tag green">AI</span></div>
+                        <div class="chat-feed" aria-live="polite" aria-busy="@busy" @ref="chatFeed">
+                            <div class="chat-label">NORTHSTAR</div><div class="chat-bubble">Hey, ambitious human. &#10024;<br />What's the next chapter you want to write?<br /><br />Upload your CV, then tell me the role you're dreaming of. We'll work out what it takes, together.</div>
+                            @foreach (var message in history)
+                            {
+                                <div class="chat-label">@(message.Role == "user" ? "YOU" : "NORTHSTAR")</div><div class="chat-bubble @(message.Role == "user" ? "user" : "")">@message.Content</div>
+                            }
+                            @if (busy) { <div class="thinking">Connecting the dots...</div> }
+                        </div>
+                        @if (history.Count == 0)
+                        {
+                            <div class="suggestions"><button class="suggestion" @onclick='() => draft = "I want to become a lead developer."'>Lead developer</button><button class="suggestion" @onclick='() => draft = "I want to become a solution architect."'>Solution architect</button><button class="suggestion" @onclick='() => draft = "I want to switch careers into data science."'>Career change</button></div>
+                        }
+                        <p class="coach-permissions">Career guidance uses your saved coaching permission. Change it in Permissions.</p>
+                        <div class="chat-input"><textarea aria-label="Message your career coach" placeholder="I want to become a lead developer..." @bind="draft" @bind:event="oninput" disabled="@busy" maxlength="2000" @onkeydown="HandleKey"></textarea><button class="send" aria-label="Send message" @onclick="SendMessage" disabled="@(busy || string.IsNullOrWhiteSpace(draft))"><Icon Name="send" /></button></div>
+                        <button class="btn primary generate" @onclick="GenerateRoadmap" disabled="@(busy || history.Count == 0)"><Icon Name="route" /> Build my personal roadmap</button>
+                        <div class="coach-footer">Powered by Azure OpenAI. Led by your ambition.</div>
+                    </section>
+                </div>
+            </div>
+        }
+        <footer class="footer"><span>NORTHSTAR / BUILT FOR YOUR NEXT CHAPTER</span><span>Less uncertainty. More possibility.</span></footer>
+    </main>
+</div>
+
+@if (settingsOpen)
+{
+    <div class="modal-backdrop">
+        <section class="modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+            <span class="tag purple">YOUR DATA, YOUR CHOICE</span><h2 id="settings-title" style="margin-top:15px">Account permissions.</h2>
+            <p>These choices are stored privately in the database for your signed-in account and checked by the backend on each new request.</p>
+            @if (!Google.IsSignedIn) { <p class="input-warning" role="status">Sign in with Google to load and save your account permissions.</p> }
+            else if (settingsLoading) { <p role="status">Loading your saved permissions...</p> }
+            <label class="consent"><input type="checkbox" @bind="allowCvStorage" disabled="@(busy || !settingsLoaded)" /><span>Store my original CV privately in Blob Storage and readable text in Cosmos DB.</span></label>
+            <label class="consent"><input type="checkbox" @bind="allowCvAnalysis" disabled="@(busy || !settingsLoaded)" /><span>Send CV text to Azure AI and save extracted work experience and provisional skill ratings/years.</span></label>
+            <label class="consent"><input type="checkbox" @bind="allowCareerChat" disabled="@(busy || !settingsLoaded)" /><span>Send my stored CV text and career conversation to Azure AI for coaching and a roadmap.</span></label>
+            <label class="consent"><input type="checkbox" @bind="allowLinkedIn" disabled="@(busy || !settingsLoaded)" /><span>Import my authorized LinkedIn name, email and picture and store them in my account record.</span></label>
+            <p class="modal-note">All choices default to off. Revoking a permission prevents future requests; it does not undo completed processing or delete saved data. Remove your CV or LinkedIn identity separately.</p>
+            @if (!string.IsNullOrEmpty(settingsError)) { <p role="alert" style="color:#f1bb9d">@settingsError</p> }
+            <div class="modal-actions"><button class="btn subtle" @onclick="CloseSettings" disabled="@(busy && !settingsLoading)">Cancel</button>
+                @if (!Google.IsSignedIn) { <button class="btn google-sign-in" @onclick="SignInForPermissions" disabled="@busy"><img src="images/google-g.png" alt="" width="18" height="18" />Sign in with Google</button> }
+                else
+                {
+                    @if (settingsError.Length > 0 && !settingsLoaded) { <button class="btn" @onclick="LoadPermissions" disabled="@busy">Retry loading permissions</button> }
+                    <button class="btn primary" @onclick="SaveSettings" disabled="@(busy || !settingsLoaded)">@(busy && !settingsLoading ? "Saving permissions..." : "Save permissions") <Icon Name="arrow" /></button>
+                }
+            </div>
+        </section>
+    </div>
+}
+
+@code {
+    private string tab = "overview", cv = "", cvName = "", draft = "", notice = "";
+    private string settingsError = "";
+    private bool settingsLoaded, settingsLoading;
+    private CancellationTokenSource? permissionsRequest;
+    private bool busy, settingsOpen, noticeIsError, deleteConfirmed, replaceAnalysisConfirmed, accountMenuOpen;
+    private bool allowCvStorage, allowCvAnalysis, allowCareerChat, allowLinkedIn;
+    private IReadOnlyList<WorkExperience> experiences = [];
+    private CareerRoadmap? roadmap;
+    private readonly List<ConversationMessage> history = [];
+    private readonly HashSet<int> completed = [];
+    private readonly List<SkillAssessment> skills = [];
+    private readonly GrowthWorkspace growthState = new();
+    private string? growthProfileVersion;
+    private bool IsGrowthTab => tab == "gap" || GrowthCoaches.All.Any(c => c.Id == tab);
+    private string GrowthTitle => tab == "gap" ? "Career Gap Analysis" : GrowthCoaches.Find(tab).Name;
+    private string librarySource = "", libraryQuery = "";
+    private ElementReference chatFeed;
+    [Inject] private IJSRuntime JS { get; set; } = default!;
+    private bool scrollChat;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            if (await Google.RestoreAsync() is not null) { await Cloud.LoadSettingsAsync(); ApplyProfile(await Cloud.LoadAsync()); }
+        }
+        catch (Exception ex) when (IsExpected(ex)) { ShowError(ex); }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!scrollChat || IsGrowthTab || tab is "library" or "skills" or "learn" or "experience") return;
+        scrollChat = false;
+        try { await JS.InvokeVoidAsync("dev2lead.scrollChat", chatFeed); }
+        catch (JSException ex) { Logger.LogWarning(ex, "Could not scroll the coach conversation"); }
+    }
+
+    private static bool IsExpected(Exception ex) => ClientErrors.IsExpected(ex);
+
+    private void ShowError(Exception ex)
+    {
+        Logger.LogError(ex, "Dev2Lead action failed");
+        noticeIsError = true;
+        notice = ex is OperationCanceledException ? "The request timed out. Check your connection and retry." :
+            ex is System.Text.Json.JsonException or KeyNotFoundException ? "The AI response was not in the expected format. Please retry." :
+            ex.Message;
+    }
+    private void ShowSuccess(string message) { noticeIsError = false; notice = message; }
+    private async Task OpenSettings()
+    {
+        if (busy) return;
+        accountMenuOpen = false; settingsError = ""; settingsLoaded = false;
+        allowCvStorage = false; allowCvAnalysis = false; allowCareerChat = false; allowLinkedIn = false;
+        settingsOpen = true;
+        if (Google.IsSignedIn) await LoadPermissions();
+    }
+
+    private async Task LoadPermissions()
+    {
+        if (busy || !settingsOpen || !Google.IsSignedIn) return;
+        busy = true; settingsLoading = true; settingsLoaded = false; settingsError = "";
+        using var request = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        permissionsRequest = request;
+        try
+        {
+            var saved = await Cloud.LoadSettingsAsync(request.Token);
+            allowCvStorage = saved.Consents.CvStorage; allowCvAnalysis = saved.Consents.CvAnalysis;
+            allowCareerChat = saved.Consents.CareerChat; allowLinkedIn = saved.Consents.LinkedInImport;
+            settingsLoaded = true;
+        }
+        catch (OperationCanceledException) when (!settingsOpen) { }
+        catch (Exception ex) when (IsExpected(ex))
+        {
+            Logger.LogError(ex, "Could not load account permissions");
+            settingsError = ex is OperationCanceledException ? "Loading permissions timed out. Check the API connection and retry."
+                : ex is System.Text.Json.JsonException or KeyNotFoundException ? "The API returned invalid account settings. Please retry."
+                : ex.Message;
+        }
+        finally { busy = false; settingsLoading = false; permissionsRequest = null; }
+    }
+
+    private void CloseSettings()
+    {
+        settingsOpen = false;
+        permissionsRequest?.Cancel();
+    }
+
+    private async Task SignInForPermissions()
+    {
+        await SignIn();
+        if (Google.IsSignedIn) await OpenSettings();
+    }
+    private void SetSkillsBusy(bool value) => busy = value;
+
+    private async Task SaveSettings()
+    {
+        if (busy) return;
+        if (!settingsLoaded || !Google.IsSignedIn)
+        {
+            Logger.LogWarning("Attempted to save account permissions before they were loaded");
+            settingsError = "Sign in and load your saved permissions before saving.";
+            return;
+        }
+        busy = true;
+        try
+        {
+            await Cloud.SaveSettingsAsync(Cloud.Settings!.TranscriptUrl, new(allowCvStorage, allowCvAnalysis, allowCareerChat, allowLinkedIn));
+            settingsOpen = false;
+            ShowSuccess("Your account permissions are saved in the database.");
+        }
+        catch (Exception ex) when (IsExpected(ex)) { Logger.LogError(ex, "Could not save cloud settings"); settingsError = ex.Message; }
+        finally { busy = false; }
+    }
+
+    private async Task UploadCv()
+    {
+        if (busy) return;
+        if (!Google.IsSignedIn) { await SignIn(); return; }
+        if (Cloud.Settings?.Consents.CvStorage != true) { ShowError(new InvalidOperationException("Enable and save CV storage permission in the header's Permissions screen.")); return; }
+        busy = true;
+        try
+        {
+            var result = await Desktop.PickCvAsync();
+            if (result is null) return;
+            ApplyProfile(await Cloud.UploadAsync(result.Value.Name, result.Value.Bytes));
+            tab = "overview";
+            if (Cloud.Settings.Consents.CvAnalysis)
+            {
+                ApplyProfile(await Cloud.AnalyzeAsync());
+                ShowSuccess("CV saved privately. Work experience and initial AI skill ratings/years are saved for review.");
+            }
+            else ShowSuccess("Your CV is saved privately. Enable AI analysis permission when you want to extract skills and experience.");
+        }
+        catch (Exception ex) when (IsExpected(ex)) { ShowError(ex); await RefreshAfterFailure(); }
+        finally { busy = false; }
+    }
+
+    private void ClearSession()
+    {
+        ResetConversation();
+        growthState.Clear(); growthProfileVersion = null;
+        cv = ""; cvName = ""; skills.Clear(); experiences = []; deleteConfirmed = false; replaceAnalysisConfirmed = false;
+        accountMenuOpen = false; settingsOpen = false;
+        settingsLoaded = false; settingsError = "";
+        allowCvStorage = false; allowCvAnalysis = false; allowCareerChat = false; allowLinkedIn = false;
+    }
+
+    private void ResetConversation()
+    {
+        history.Clear(); roadmap = null; completed.Clear(); draft = ""; notice = "";
+    }
+
+    private void ApplyProfile(CareerProfileResponse? profile)
+    {
+        if (growthProfileVersion != profile?.Version) { growthState.Clear(); growthProfileVersion = profile?.Version; }
+        if ((profile?.CvText ?? "") != cv) ResetConversation();
+        cv = profile?.CvText ?? ""; cvName = profile?.FileName ?? "";
+        skills.Clear(); skills.AddRange(profile?.Skills.Select(s => s.ToAssessment()) ?? []);
+        experiences = profile?.Experiences ?? [];
+        deleteConfirmed = false; replaceAnalysisConfirmed = false;
+    }
+
+    private async Task SignIn()
+    {
+        if (busy) return;
+        busy = true;
+        ClearSession(); Cloud.Clear();
+        try { await Google.SignInAsync(); await Cloud.LoadSettingsAsync(); ApplyProfile(await Cloud.LoadAsync()); ShowSuccess("Signed in with Google. Your private account and profile are loaded."); }
+        catch (Exception ex) when (IsExpected(ex)) { ShowError(ex); }
+        finally { busy = false; }
+    }
+    private void SignOut()
+    {
+        Google.SignOut(); Cloud.Clear(); ClearSession();
+        ShowSuccess("Signed out. Account data was cleared from this device's memory; your cloud CV is retained.");
+    }
+    private async Task RefreshProfile()
+    {
+        if (busy || !Google.IsSignedIn) return;
+        busy = true; accountMenuOpen = false;
+        try { await Cloud.LoadSettingsAsync(); ApplyProfile(await Cloud.LoadAsync()); ShowSuccess("Account and cloud profile refreshed. Unsaved on-screen edits were replaced."); }
+        catch (Exception ex) when (IsExpected(ex)) { ShowError(ex); }
+        finally { busy = false; }
+    }
+    private async Task RefreshAfterFailure()
+    {
+        var originalNotice = notice;
+        try { ApplyProfile(await Cloud.LoadAsync()); notice = originalNotice; noticeIsError = true; }
+        catch (Exception ex) when (IsExpected(ex))
+        {
+            Logger.LogWarning(ex, "Could not refresh cloud profile after a failed mutation");
+            notice = originalNotice + " Profile refresh also failed: " + ex.Message;
+            noticeIsError = true;
+        }
+    }
+    private async Task AnalyzeCv()
+    {
+        if (busy) return;
+        if (Cloud.Settings?.Consents.CvAnalysis != true) { ShowError(new InvalidOperationException("Enable and save AI analysis permission in Permissions.")); return; }
+        if (skills.Count > 0 && !replaceAnalysisConfirmed) { ShowError(new InvalidOperationException("Confirm replacing saved skills and experience before analyzing again.")); return; }
+        busy = true;
+        try { ApplyProfile(await Cloud.AnalyzeAsync()); ShowSuccess("Work experience and new AI skill estimates are saved. Review your assessments."); }
+        catch (Exception ex) when (IsExpected(ex)) { ShowError(ex); await RefreshAfterFailure(); }
+        finally { busy = false; }
+    }
+    private async Task DeleteProfile()
+    {
+        if (busy || !deleteConfirmed) return;
+        busy = true;
+        try { await Cloud.DeleteAsync(); ClearSession(); ShowSuccess("Your cloud CV, work experience, and skills were deleted."); }
+        catch (Exception ex) when (IsExpected(ex)) { ShowError(ex); await RefreshAfterFailure(); }
+        finally { busy = false; }
+    }
+
+    private bool CanChat()
+    {
+        if (cv.Length == 0) { ShowError(new InvalidOperationException("Upload your CV first so your coach can ground the advice in your experience.")); return false; }
+        if (!Google.IsSignedIn) { ShowError(new InvalidOperationException("Sign in with Google first.")); return false; }
+        if (Cloud.Settings?.Consents.CareerChat != true) { ShowError(new InvalidOperationException("Enable and save coaching permission in Permissions.")); return false; }
+        return true;
+    }
+
+    private async Task SendMessage()
+    {
+        if (busy || string.IsNullOrWhiteSpace(draft) || !CanChat()) return;
+        var text = draft.Trim();
+        var candidate = history.Append(new ConversationMessage("user", text)).ToList();
+        busy = true;
+        scrollChat = true;
+        notice = "";
+        try
+        {
+            var reply = await Cloud.ChatAsync(candidate, false);
+            history.Add(new("user", text));
+            history.Add(new("assistant", reply.Message));
+            draft = "";
+            if (reply.Roadmap is not null) { roadmap = reply.Roadmap; completed.Clear(); }
+        }
+        catch (Exception ex) when (IsExpected(ex)) { ShowError(ex); }
+        finally { busy = false; scrollChat = true; }
+    }
+
+    private async Task GenerateRoadmap()
+    {
+        if (busy || !CanChat()) return;
+        busy = true;
+        notice = "";
+        try
+        {
+            var reply = await Cloud.ChatAsync(history, true);
+            roadmap = reply.Roadmap;
+            history.Add(new("user", "Build my personalized career roadmap."));
+            history.Add(new("assistant", reply.Message));
+            completed.Clear(); tab = "roadmap";
+            ShowSuccess("Your personal roadmap is ready. Pick your first action and make your next move.");
+        }
+        catch (Exception ex) when (IsExpected(ex)) { ShowError(ex); }
+        finally { busy = false; scrollChat = true; }
+    }
+
+    private async Task HandleKey(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter" && args.CtrlKey) await SendMessage();
+    }
+    private void GoToCv() => tab = "overview";
+    private async Task ImportLinkedIn()
+    {
+        if (busy) return;
+        busy = true;
+        try
+        {
+            await Desktop.OpenLinkedInAuthorizationAsync(await Cloud.StartLinkedInAsync());
+            ShowSuccess("Complete LinkedIn authorization in your browser, then choose Refresh profile from your account menu.");
+        }
+        catch (Exception ex) when (IsExpected(ex)) { ShowError(ex); }
+        finally { busy = false; }
+    }
+    private async Task RemoveLinkedIn()
+    {
+        if (busy) return;
+        busy = true;
+        try { await Cloud.RemoveLinkedInAsync(); ShowSuccess("Imported LinkedIn identity removed from your account."); }
+        catch (Exception ex) when (IsExpected(ex)) { ShowError(ex); }
+        finally { busy = false; }
+    }
+    private void ToggleDone(int rank) { if (!completed.Add(rank)) completed.Remove(rank); }
+    private async Task OpenResource(string id)
+    {
+        try { await Desktop.OpenResourceAsync(id); }
+        catch (Exception ex) when (IsExpected(ex)) { ShowError(ex); }
+    }
+    private async Task ExportRoadmap()
+    {
+        if (roadmap is null || busy) return;
+        busy = true;
+        try { var path = await Desktop.ExportAsync(roadmap, false); ShowSuccess($"Roadmap exported to {path}"); }
+        catch (Exception ex) when (IsExpected(ex)) { ShowError(ex); }
+        finally { busy = false; }
+    }
+}

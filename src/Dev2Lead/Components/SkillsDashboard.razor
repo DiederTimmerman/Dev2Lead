@@ -1,0 +1,141 @@
+@using Dev2Lead.Core
+@using Dev2Lead.Services
+@using Microsoft.Extensions.Logging
+@implements IDisposable
+@inject CloudProfileClient Cloud
+@inject ILogger<SkillsDashboard> Logger
+
+<section class="panel skills-intro">
+    <div><span class="tag purple">YOUR SKILLS COMPASS</span><h2>Experience is more than a job title.</h2><p>Let AI identify skills in your CV, then review the evidence, level, and total non-overlapping years for each skill. Unknown is better than a made-up number.</p></div>
+    <div class="skills-intro-actions"><button class="btn" @onclick="() => UploadRequested.InvokeAsync()" disabled="@loading"><Icon Name="route" /> Go to my CV</button><button class="btn primary" @onclick="Generate" disabled="@(loading || Cv.Length == 0)"><Icon Name="target" /> @(loading ? "Assessing evidence..." : "Suggest skills from CV")</button></div>
+    <p class="section-caption">AI analysis permission is managed in your saved account settings.</p>
+    <details class="skills-analysis-options"><summary>Re-analysis options</summary><label class="consent skills-consent"><input type="checkbox" @bind="replaceConfirmed" disabled="@loading" /><span>Replace saved AI skills and experience and discard unsaved edits when generating again.</span></label></details>
+</section>
+@if (notice.Length > 0) { <div class="notice @(hasError ? "" : "success")" style="margin-top:16px" role="@(hasError ? "alert" : "status")">@notice</div> }
+<div class="skills-overview">
+    <div class="panel"><strong>@Skills.Count</strong><span>Skills identified</span></div>
+    <div class="panel"><strong>@Skills.Count(s => s.Reviewed)</strong><span>Reviewed assessments</span></div>
+    <div class="panel"><strong>@Skills.Count(NeedsInput)</strong><span>Need your input</span></div>
+</div>
+<div class="skills-toolbar"><div><strong>Your competence overview</strong><span>Levels and years are independent assessments.</span></div><div><button class="btn small" @onclick="AddSkill" disabled="@(loading || Skills.Count >= 60)">+ Add a skill</button><button class="btn primary small" @onclick="Save" disabled="@(loading || Skills.Any(s => !s.Reviewed))">Save reviewed profile</button></div></div>
+@if (dirty) { <p class="input-warning" role="status">You have unsaved changes. Confirm every assessment before saving the profile.</p> }
+<details class="panel competence-overview"><summary>View competence matrix / proficiency scale</summary>
+    <div class="matrix-scroll"><table class="competence-matrix"><thead><tr><th>Competence</th>@foreach (var level in SkillProfile.Levels) { <th>@level</th> }<th>Years</th></tr></thead><tbody>
+    @foreach (var skill in Skills) { <tr><th scope="row">@skill.Name @if (NeedsInput(skill)) { <span class="input-warning">!</span> }</th>@for (var i = 1; i <= 5; i++) { <td class="@(skill.Level == i ? "matrix-current" : "")">@(skill.Level == i ? "Current" : "-")</td> }<td>@(skill.Years is { } y ? $"{y:0.#}" : "Unknown")</td></tr> }
+    </tbody></table></div><p class="section-caption">Unknown levels are not treated as zero. Proficiency ranges from guided work to demonstrated mastery; years alone do not determine level.</p>
+</details>
+@foreach (var category in SkillProfile.Categories)
+{
+    <section class="skills-category">
+        <div class="learn-section-heading"><h2>@category</h2><span class="tag @(category == "Technical" ? "green" : "purple")">@Skills.Count(s => s.Category == category) SKILLS</span></div>
+        <div class="skills-grid">
+            @foreach (var skill in Skills.Where(s => s.Category == category).ToList())
+            {
+                <article class="panel skill-card" @key="skill">
+                    <div class="skill-card-heading"><span class="tag @(NeedsInput(skill) ? "amber" : "green")">@(NeedsInput(skill) ? "INPUT REQUIRED" : "REVIEWED")</span><button class="btn small subtle" aria-label="Edit @skill.Name" @onclick="() => editing = skill" disabled="@loading">Edit</button></div>
+                    @if (editing != skill)
+                    {
+                        <h3>@skill.Name</h3>
+                        <div class="skill-meter" aria-label="@(skill.Level is { } level ? $"{SkillProfile.Levels[level - 1]}: {level} of 5" : "Proficiency unknown")">@for (var i = 1; i <= 5; i++) { <span class="@(skill.Level >= i ? "filled" : "")"></span> }</div>
+                        <div class="skill-summary"><strong>@(skill.Level is { } current ? SkillProfile.Levels[current - 1] : "Unknown level")</strong><span>@(skill.Years is { } years ? $"{years:0.#} years" : "Years unknown")</span></div>
+                        @if (NeedsInput(skill)) { <p class="input-warning">@(skill.Reviewed ? "Level or years unknown. Add an assessment when you have evidence." : "AI estimate awaiting your review. Edit to check evidence and confirm.")</p> }
+                        <details class="skill-evidence"><summary>View evidence</summary><p>@skill.Evidence</p></details>
+                    }
+                    else
+                    {
+                    <label class="skill-field">Skill<input aria-label="Skill name" @bind="skill.Name" @bind:after="() => Edited(skill)" maxlength="100" disabled="@loading" /></label>
+                    <label class="skill-field">Category<select aria-label="Skill category" @bind="skill.Category" @bind:after="() => Edited(skill)" disabled="@loading">@foreach (var option in SkillProfile.Categories) { <option>@option</option> }</select></label>
+                    <div class="skill-assessment-fields">
+                        <label class="skill-field">Proficiency<select aria-label="Proficiency for @skill.Name" @bind="skill.Level" @bind:after="() => Edited(skill)" disabled="@loading"><option value="">Unknown</option>@for (var i = 1; i <= 5; i++) { <option value="@i">@SkillProfile.Levels[i - 1]</option> }</select></label>
+                        <label class="skill-field">Total years<input type="number" aria-label="Years of experience for @skill.Name" min="0" max="80" step="0.1" placeholder="Unknown" @bind="skill.Years" @bind:after="() => Edited(skill)" disabled="@loading" /></label>
+                    </div>
+                    <div class="skill-meter" aria-label="@(skill.Level is { } level ? $"{SkillProfile.Levels[level - 1]}: {level} of 5" : "Proficiency unknown")">@for (var i = 1; i <= 5; i++) { <span class="@(skill.Level >= i ? "filled" : "")"></span> }</div>
+                    <div class="skill-summary"><strong>@(skill.Level is { } current ? SkillProfile.Levels[current - 1] : "Unknown level")</strong><span>@(skill.Years is { } years ? $"{years:0.#} years" : "Years unknown")</span></div>
+                    <details class="skill-evidence"><summary>CV evidence / review notes</summary><textarea aria-label="Evidence for @skill.Name" @bind="skill.Evidence" @bind:after="() => Edited(skill)" maxlength="2000" disabled="@loading"></textarea></details>
+                    <div class="skill-editor-actions"><button class="btn small primary" @onclick="() => Review(skill)" disabled="@loading"><Icon Name="check" /> Confirm assessment</button><button class="btn small subtle" @onclick="() => editing = null" disabled="@loading">Close editor</button><button class="skill-remove" aria-label="Remove @skill.Name" @onclick="() => Remove(skill)" disabled="@loading">&times;</button></div>
+                    }
+                </article>
+            }
+        </div>
+        @if (!Skills.Any(s => s.Category == category))
+        {
+            <div class="panel skills-empty"><Icon Name="@(category == "Technical" ? "target" : "book")" /><p>@(category == "Technical" ? "Languages, frameworks, cloud, tooling, and engineering practices." : category == "Soft skills" ? "Communication, mentoring, collaboration, and leadership." : "Business knowledge and standards such as WCAG, NORA, governance, and accessibility.")</p></div>
+        }
+    </section>
+}
+<p class="section-caption">AI initial values are already stored privately in your signed-in cloud profile and remain provisional. Review each assessment before saving manual edits. Cloud saves check the profile version to prevent overwriting another device's changes. Replacing your CV replaces its skills and work experience. Delete your entire stored CV/profile from Overview to remove it from cloud storage.</p>
+
+@code {
+    [Parameter, EditorRequired] public List<SkillAssessment> Skills { get; set; } = [];
+    [Parameter] public string Cv { get; set; } = "";
+    [Parameter] public EventCallback<CareerProfileResponse> ProfileChanged { get; set; }
+    [Parameter] public EventCallback UploadRequested { get; set; }
+    [Parameter] public EventCallback<bool> BusyChanged { get; set; }
+    private bool loading, replaceConfirmed, hasError, disposed, dirty;
+    private SkillAssessment? editing;
+    private string notice = "";
+    private readonly CancellationTokenSource lifetime = new();
+
+    protected override void OnParametersSet()
+    {
+        dirty = !Skills.Select(SkillValue.From).SequenceEqual(Cloud.Profile?.Skills ?? []);
+        if (editing is not null && !Skills.Contains(editing)) editing = null;
+    }
+
+    private static bool NeedsInput(SkillAssessment skill) => !skill.Reviewed || skill.Level is null || skill.Years is null;
+    private void Edited(SkillAssessment skill) { skill.Reviewed = false; dirty = true; notice = ""; }
+    private void AddSkill() { editing = new() { Name = "New skill" }; Skills.Add(editing); dirty = true; notice = ""; }
+    private void Remove(SkillAssessment skill) { Skills.Remove(skill); editing = null; dirty = true; notice = ""; }
+    private void Review(SkillAssessment skill)
+    {
+        try { SkillProfile.Validate(Skills); skill.Reviewed = true; editing = null; dirty = true; Success("Assessment confirmed. Save the profile to keep your changes."); }
+        catch (InvalidDataException ex) { Error(ex); }
+    }
+    private async Task Generate()
+    {
+        if (loading) return;
+        if (Cloud.Settings?.Consents.CvAnalysis != true) { Error(new InvalidOperationException("Enable and save AI CV analysis permission in account settings.")); return; }
+        if (Skills.Count > 0 && !replaceConfirmed) { Error(new InvalidOperationException("Confirm replacing your on-screen profile before generating again.")); return; }
+        loading = true; notice = ""; await BusyChanged.InvokeAsync(true);
+        try
+        {
+            var profile = await Cloud.AnalyzeAsync(lifetime.Token);
+            if (disposed) return;
+            await ProfileChanged.InvokeAsync(profile);
+            dirty = false; editing = null;
+            replaceConfirmed = false;
+            Success("New AI estimates and experience are saved in your cloud profile. Check every level, duration, and evidence before saving edits.");
+        }
+        catch (OperationCanceledException) when (disposed) { }
+        catch (Exception ex) when (ClientErrors.IsExpected(ex))
+        {
+            Error(ex);
+            var originalNotice = notice;
+            try
+            {
+                if (await Cloud.LoadAsync(lifetime.Token) is { } profile) await ProfileChanged.InvokeAsync(profile);
+                notice = originalNotice;
+            }
+            catch (Exception refreshError) when (ClientErrors.IsExpected(refreshError))
+            { Error(refreshError); notice = originalNotice + " Refresh also failed: " + notice; }
+        }
+        finally { loading = false; await BusyChanged.InvokeAsync(false); }
+    }
+    private async Task Save()
+    {
+        if (loading) return;
+        loading = true; await BusyChanged.InvokeAsync(true);
+        try { await ProfileChanged.InvokeAsync(await Cloud.SaveSkillsAsync(Skills, lifetime.Token)); dirty = false; editing = null; Success("Your reviewed skills profile is saved to your signed-in cloud account."); }
+        catch (Exception ex) when (ClientErrors.IsExpected(ex)) { Error(ex); }
+        finally { loading = false; await BusyChanged.InvokeAsync(false); }
+    }
+    private void Success(string message) { hasError = false; notice = message; }
+    private void Error(Exception ex)
+    {
+        Logger.LogError(ex, "Skills action failed");
+        hasError = true;
+        notice = ex is System.Text.Json.JsonException or KeyNotFoundException ? "The AI returned an unexpected skills response. Retry or add skills manually."
+            : ex is OperationCanceledException ? "The skills request timed out. Please retry." : ex.Message;
+    }
+    public void Dispose() { disposed = true; lifetime.Cancel(); lifetime.Dispose(); }
+}

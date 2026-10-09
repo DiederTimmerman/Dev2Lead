@@ -1,0 +1,119 @@
+@using Dev2Lead.Core
+@using Dev2Lead.Services
+@using Microsoft.Extensions.Logging
+@implements IDisposable
+@inject CloudProfileClient Cloud
+@inject GoogleSignInService Google
+@inject ILogger<GrowthDashboard> Logger
+
+@if (Mode == "gap")
+{
+    <section class="panel growth-hero"><span class="tag purple">CAREER GAP ANALYSIS AGENT</span><h2>The distance to your next chapter.</h2><p>Compare your saved skills with advisory role requirements. Turn gaps into measurable practice, not a verdict on your potential.</p>
+        <div class="growth-target"><label class="skill-field">Target role<input aria-label="Gap analysis target role" @bind="State.TargetRole" maxlength="160" disabled="@loading" /></label><button class="btn primary" @onclick="Analyze" disabled="@loading">@(loading ? "Analyzing competencies..." : "Analyze my career gap")</button></div>
+    </section>
+    @if (State.Analysis is { } gap)
+    {
+        <section class="panel gap-result">
+            <div class="gap-score"><strong>@(gap.GapScore is { } score ? $"{score}" : "--")<small>/100</small></strong><span>Career gap score</span><p>0 = smallest evidenced gap / 100 = largest</p></div>
+            <div><span class="tag blue">@gap.TargetRole</span><h2>@gap.Summary</h2><p>@gap.Assumptions</p><p class="input-warning">@gap.KnownCompetencies / @gap.TotalCompetencies competencies have a known level. Unknowns are excluded, not counted as zero. @(gap.Competencies.Any(c => !c.Reviewed) ? "Includes provisional or unreviewed assessments." : "")</p></div>
+        </section>
+        <section class="panel competence-overview"><h2>Competence matrix</h2><p class="section-caption">Gap = 100 x sum(max(target - current, 0)) / sum(target), using known levels only. Targets are AI suggestions, not certified employer requirements.</p>
+            <div class="matrix-scroll"><table class="competence-matrix gap-matrix"><thead><tr><th>Competence</th><th>Current</th><th>Target</th><th>Level gap</th><th>Next practice step</th></tr></thead><tbody>
+            @foreach (var row in gap.Competencies)
+            {
+                <tr><th scope="row">@row.Name<small>@row.Category</small>@if (!row.Reviewed || row.CurrentLevel is null) { <span class="input-warning">Review required</span> }</th><td>@LevelName(row.CurrentLevel)<small>@(row.Years is { } years ? $"{years:0.#} years" : "Years unknown")</small></td><td>@LevelName(row.TargetLevel)</td><td>@(row.CurrentLevel is { } current ? $"{Math.Max(0, row.TargetLevel - current)}" : "Unknown")</td><td>@row.Action<details class="skill-evidence"><summary>Why / evidence</summary><p>@row.Rationale</p><p>@row.Evidence</p></details></td></tr>
+            }
+            </tbody></table></div><button class="btn small" @onclick="() => SkillsRequested.InvokeAsync()" disabled="@loading">Review my skills</button>
+        </section>
+    }
+}
+else
+{
+    var coach = GrowthCoaches.Find(Mode);
+    var session = State.Sessions[Mode];
+    <section class="panel growth-hero"><span class="tag purple">YOUR GROWTH PARTNER</span><h2>@coach.Name</h2><p>@coach.Focus</p><p>Bring a real scenario. Practice a response. Reflect on the feedback. Your coach uses your saved CV and skills and helps you choose the next concrete step.</p>
+        @if (Mode == "interview")
+        {
+            <div class="hero-buttons" style="margin-top:20px" aria-label="Interview practice choices">
+                <button class="btn" @onclick='() => session.Draft = "Help me prepare for a promotion. Ask about the role I want and help me collect real evidence of impact."' disabled="@loading">Promotion preparation</button>
+                <button class="btn" @onclick='() => session.Draft = "Practice behavioral questions with me. Ask one question, wait for my answer and give STAR feedback."' disabled="@loading">Behavioral questions</button>
+                <button class="btn" @onclick='() => session.Draft = "Train me for an intake conversation. Help me clarify expectations, scope and fit through a realistic role-play."' disabled="@loading">Intake training</button>
+            </div>
+        }
+    </section>
+    <section class="panel growth-chat">
+        <div class="growth-chat-feed" role="log" aria-label="@coach.Name conversation">
+            @if (session.Messages.Count == 0) { <div class="coach-welcome"><h3>Small practices. Meaningful growth.</h3><p>@coach.Starter</p><button class="btn" @onclick="() => Send(coach.Starter)" disabled="@loading">Start guided practice</button></div> }
+            @foreach (var message in session.Messages) { <article class="growth-message @(message.Role == "user" ? "from-user" : "")"><strong>@(message.Role == "user" ? "You" : coach.Name)</strong><p>@message.Content</p></article> }
+            @if (loading) { <div class="thinking" role="status">Your coach is reflecting...</div> }
+        </div>
+        <label class="skill-field">Your question or practice response<textarea aria-label="Message to @coach.Name" @bind="session.Draft" maxlength="6000" disabled="@loading" placeholder="Share a challenge or answer your coach's question..."></textarea></label>
+        <div class="hero-buttons"><button class="btn primary" @onclick="() => Send(session.Draft)" disabled="@(loading || string.IsNullOrWhiteSpace(session.Draft))">Send to coach</button><button class="btn subtle" @onclick="() => Restart(session)" disabled="@(loading || session.Messages.Count == 0)">Restart practice</button></div>
+    </section>
+}
+@if (notice.Length > 0) { <div class="notice" role="alert">@notice</div> }
+@if (!Google.IsSignedIn || Cloud.Profile is null || Cloud.Settings?.Consents.CareerChat != true)
+{
+    <p class="input-warning">Sign in, upload your CV in Overview, and enable saved Career coaching permission before using these agents.</p>
+}
+<p class="section-caption">Coaching and gap analysis use saved cloud skills, not unsaved edits. Sessions remain in memory while navigating; signing out, changing the saved profile or closing the app clears them. Advice and target levels are provisional, not professional certification.</p>
+
+@code {
+    [Parameter, EditorRequired] public string Mode { get; set; } = "gap";
+    [Parameter, EditorRequired] public GrowthWorkspace State { get; set; } = default!;
+    [Parameter] public EventCallback<bool> BusyChanged { get; set; }
+    [Parameter] public EventCallback SkillsRequested { get; set; }
+    private bool loading, disposed;
+    private string notice = "";
+    private readonly CancellationTokenSource lifetime = new();
+    private static string LevelName(int? level) => level is { } value ? $"{value} / {SkillProfile.Levels[value - 1]}" : "Unknown";
+
+    private void RequireAccess()
+    {
+        if (!Google.IsSignedIn || Cloud.Profile is null)
+            throw new InvalidOperationException("Sign in and upload your CV in Overview first.");
+        if (Cloud.Settings?.Consents.CareerChat != true)
+            throw new InvalidOperationException("Enable and save Career coaching permission in the header.");
+    }
+    private async Task Analyze()
+    {
+        if (loading) return;
+        loading = true; notice = ""; await BusyChanged.InvokeAsync(true);
+        try
+        {
+            RequireAccess();
+            var result = await Cloud.GapAsync(State.TargetRole, lifetime.Token);
+            if (!disposed) State.Analysis = result;
+        }
+        catch (OperationCanceledException) when (disposed) { }
+        catch (Exception ex) when (ClientErrors.IsExpected(ex)) { Error(ex); }
+        finally { loading = false; await BusyChanged.InvokeAsync(false); }
+    }
+    private async Task Send(string text)
+    {
+        if (loading) return;
+        var session = State.Sessions[Mode];
+        loading = true; notice = ""; await BusyChanged.InvokeAsync(true);
+        try
+        {
+            RequireAccess();
+            var messages = session.Messages.TakeLast(23).Append(new ConversationMessage("user", text)).ToList();
+            GrowthCoaches.ValidateMessages(messages);
+            var reply = await Cloud.GrowthChatAsync(Mode, messages, lifetime.Token);
+            if (disposed) return;
+            session.Messages.Add(new("user", text)); session.Messages.Add(new("assistant", reply.Message));
+            session.Draft = "";
+        }
+        catch (OperationCanceledException) when (disposed) { }
+        catch (Exception ex) when (ClientErrors.IsExpected(ex)) { Error(ex); }
+        finally { loading = false; await BusyChanged.InvokeAsync(false); }
+    }
+    private void Restart(CoachSession session) { session.Messages.Clear(); session.Draft = ""; notice = ""; }
+    private void Error(Exception ex)
+    {
+        Logger.LogError(ex, "Growth coaching action failed");
+        notice = ex is System.Text.Json.JsonException or KeyNotFoundException ? "The agent returned an unexpected response. Please retry."
+            : ex is OperationCanceledException ? "The coaching request timed out. Please retry." : ex.Message;
+    }
+    public void Dispose() { disposed = true; lifetime.Cancel(); lifetime.Dispose(); }
+}

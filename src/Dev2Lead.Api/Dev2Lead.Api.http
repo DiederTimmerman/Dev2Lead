@@ -1,0 +1,100 @@
+@baseUrl = http://127.0.0.1:5246
+@idToken = REPLACE_WITH_GOOGLE_ID_TOKEN
+@version = REPLACE_WITH_CURRENT_PROFILE_VERSION
+
+### Health
+GET {{baseUrl}}/health
+
+### Current account
+GET {{baseUrl}}/api/account
+Authorization: Bearer {{idToken}}
+
+### Current profile (404 for a new account)
+GET {{baseUrl}}/api/profile
+Authorization: Bearer {{idToken}}
+
+### Read preferences without a CV
+GET {{baseUrl}}/api/account/settings
+Authorization: Bearer {{idToken}}
+
+### Save explicit permission (version is null only for a new account)
+PUT {{baseUrl}}/api/account/settings
+Authorization: Bearer {{idToken}}
+Content-Type: application/json
+
+{ "transcriptUrl": "", "consents": { "cvStorage": true, "cvAnalysis": true, "careerChat": true, "linkedInImport": true }, "version": null }
+
+### Start LinkedIn authorization; open returned URL in your system browser
+POST {{baseUrl}}/api/linkedin/connect
+Authorization: Bearer {{idToken}}
+
+### Callback requires an unexpired single-use state and authorized provider code
+GET {{baseUrl}}/api/linkedin/callback?state=REPLACE_WITH_STATE&code=REPLACE_WITH_PROVIDER_CODE
+
+### Remove imported LinkedIn identity, preserving CV/preferences
+DELETE {{baseUrl}}/api/account/linkedin
+Authorization: Bearer {{idToken}}
+
+### Store original CV and extracted text
+POST {{baseUrl}}/api/profile/cv
+Authorization: Bearer {{idToken}}
+Content-Type: multipart/form-data; boundary=Dev2LeadBoundary
+
+--Dev2LeadBoundary
+Content-Disposition: form-data; name="consent"
+
+true
+--Dev2LeadBoundary
+Content-Disposition: form-data; name="file"; filename="Demo-CV.txt"
+Content-Type: text/plain
+
+Alex Example. Developer with three years of C# experience at Example Company.
+--Dev2LeadBoundary--
+
+### Save initial AI experience and skills
+POST {{baseUrl}}/api/profile/analyze
+Authorization: Bearer {{idToken}}
+Content-Type: application/json
+
+{ "version": "{{version}}", "consent": true }
+
+### Save reviewed edits
+PUT {{baseUrl}}/api/profile/skills
+Authorization: Bearer {{idToken}}
+Content-Type: application/json
+
+{ "version": "{{version}}", "skills": [{"name":"C#","category":"Technical","level":3,"years":3,"evidence":"Reviewed by me","reviewed":true}] }
+
+### Download own original
+GET {{baseUrl}}/api/profile/cv/original
+Authorization: Bearer {{idToken}}
+
+### Career coaching
+POST {{baseUrl}}/api/profile/chat
+Authorization: Bearer {{idToken}}
+Content-Type: application/json
+
+{ "messages":[{"role":"user","content":"I want to become a lead developer."}], "generateRoadmap":false, "consent":true }
+
+### Specialist growth coaching (technical-lead / engineering-manager / interview)
+POST {{baseUrl}}/api/profile/coaches/chat
+Authorization: Bearer {{idToken}}
+Content-Type: application/json
+
+{ "coachId":"technical-lead", "messages":[{"role":"user","content":"Help me practice an architecture review."}], "version":"{{version}}" }
+
+### Career gap analysis; scores calculated from saved levels, unknowns excluded
+POST {{baseUrl}}/api/profile/gap-analysis
+Authorization: Bearer {{idToken}}
+Content-Type: application/json
+
+{ "targetRole":"Technical lead", "version":"{{version}}" }
+
+### Delete own stored CV and profile
+DELETE {{baseUrl}}/api/profile
+Authorization: Bearer {{idToken}}
+If-Match: {{version}}
+
+### Invalid token must never expose profile data
+GET {{baseUrl}}/api/profile
+Authorization: Bearer invalid
