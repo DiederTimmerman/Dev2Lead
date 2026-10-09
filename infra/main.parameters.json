@@ -1,0 +1,17 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "cosmosResourceGroup": { "value": "seachpoi-rg" },
+    "storageResourceGroup": { "value": "cloud-shell-storage-westeurope" },
+    "cosmosAccountName": { "value": "cosmos-agents12" },
+    "createCosmosAccount": { "value": false },
+    "cosmosLocation": { "value": "westeurope" },
+    "deployStorage": { "value": true },
+    "storageAccountName": { "value": "saaiagentsworkflow" },
+    "databaseName": { "value": "Northstar" },
+    "profileContainerName": { "value": "CareerProfiles" },
+    "cvContainerName": { "value": "northstar-cvs" },
+    "backendPrincipalId": { "value": "" }
+  }
+}

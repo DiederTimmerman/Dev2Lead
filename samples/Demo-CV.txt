@@ -1,0 +1,28 @@
+Alex Morgan
+Software Developer
+
+Professional summary
+Software developer with five years of experience building C# and .NET applications.
+Interested in becoming a lead developer and mentoring a small engineering team.
+
+Experience
+2022-present: Software Developer, Example Products
+- Built and maintained ASP.NET Core services and SQL Server data models.
+- Worked with Azure App Service and GitHub Actions CI/CD.
+- Reviewed pull requests and helped onboard two junior developers.
+- Worked with product owners to plan sprint delivery.
+
+2020-2022: Junior Developer, Example Studio
+- Developed internal business applications with C# and JavaScript.
+- Wrote unit tests and supported production releases.
+
+Skills
+C#, .NET, SQL, Azure, Git, unit testing, agile delivery, code review.
+
+Education
+Bachelor's degree in software engineering.
+
+Learning availability
+Five hours each week. Target: lead developer within 12 months.
+
+This is fictional demonstration data, not a real person's CV.

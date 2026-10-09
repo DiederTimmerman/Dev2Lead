@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Dev2Lead.Api.Tests/Dev2Lead.Api.Tests.csproj" />
+    <Project Path="src/Dev2Lead.Api/Dev2Lead.Api.csproj" />
+    <Project Path="src/Dev2Lead.Core.Tests/Dev2Lead.Core.Tests.csproj" />
+    <Project Path="src/Dev2Lead.Core/Dev2Lead.Core.csproj" />
+    <Project Path="src/Dev2Lead/Dev2Lead.csproj" />
+    <Project Path="src/Dev2Lead.AppHost/Dev2Lead.AppHost.csproj" />
+    <Project Path="src/Dev2Lead.ServiceDefaults/Dev2Lead.ServiceDefaults.csproj" />
+  </Folder>
+</Solution>

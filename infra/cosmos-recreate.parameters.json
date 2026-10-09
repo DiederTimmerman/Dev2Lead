@@ -1,0 +1,14 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "cosmosResourceGroup": { "value": "seachpoi-rg" },
+    "cosmosAccountName": { "value": "cosmos-agents12" },
+    "createCosmosAccount": { "value": true },
+    "cosmosLocation": { "value": "westeurope" },
+    "deployStorage": { "value": false },
+    "databaseName": { "value": "Northstar" },
+    "profileContainerName": { "value": "CareerProfiles" },
+    "backendPrincipalId": { "value": "ceec2bcc-1650-42b5-87ba-5098b55f14b0" }
+  }
+}
