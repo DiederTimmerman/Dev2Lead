@@ -99,7 +99,7 @@ public sealed class CareerCoach(HttpClient http)
         if (reply.Roadmap is not { } roadmap) return;
         if (string.IsNullOrWhiteSpace(roadmap.TargetRole) || string.IsNullOrWhiteSpace(roadmap.Summary)
             || string.IsNullOrWhiteSpace(roadmap.EstimatedTime) || string.IsNullOrWhiteSpace(roadmap.Assumptions)
-            || roadmap.FocusPoints is null || roadmap.FocusPoints.Count != 5
+            || roadmap.FocusPoints is null 
             || roadmap.FocusPoints.Any(p => p is null)
             || !roadmap.FocusPoints.Select(p => p.Rank).Order().SequenceEqual(Enumerable.Range(1, 5))
             || roadmap.Milestones is null || roadmap.Milestones.Count < 3)
